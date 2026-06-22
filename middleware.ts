@@ -1,10 +1,13 @@
-import { auth } from "@/lib/auth";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export default auth((req) => {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isAuthenticated = !!req.auth?.user;
 
+  const sessionToken =
+    req.cookies.get("authjs.session-token")?.value ||
+    req.cookies.get("__Secure-authjs.session-token")?.value;
+
+  const isAuthenticated = !!sessionToken;
   const isAppRoute = pathname.startsWith("/app");
   const isAuthRoute = pathname === "/login" || pathname === "/signup";
 
@@ -19,7 +22,7 @@ export default auth((req) => {
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
