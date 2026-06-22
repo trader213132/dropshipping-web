@@ -1,0 +1,559 @@
+// CommerceForge AI — Prisma Schema
+// SQLite for local development (no Docker needed)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum SystemRole {
+  USER
+  SUPER_ADMIN
+}
+
+enum WorkspacePlan {
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  ANALYST
+  DESIGNER
+  CLIENT_READONLY
+}
+
+enum ProductCategory {
+  ELECTRONICS
+  FASHION
+  BEAUTY
+  HOME_GARDEN
+  SPORTS_OUTDOORS
+  TOYS_GAMES
+  PET_SUPPLIES
+  HEALTH_WELLNESS
+  OFFICE_STATIONERY
+  AUTOMOTIVE
+  KITCHEN_DINING
+  OTHER
+}
+
+enum AnalysisStatus {
+  PENDING
+  COMPLETE
+  ERROR
+}
+
+enum BrandStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum StorePlatform {
+  SHOPIFY
+  WOOCOMMERCE
+  MANUAL
+}
+
+enum StoreStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+enum RuleTrigger {
+  PRICE_DROP
+  STOCK_LOW
+  STOCK_OUT
+  TREND_SPIKE
+  OPPORTUNITY_SCORE_THRESHOLD
+}
+
+enum RuleAction {
+  SEND_EMAIL
+  CREATE_ALERT
+  PAUSE_PRODUCT
+  NOTIFY_WEBHOOK
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum IntegrationProvider {
+  SHOPIFY
+  STRIPE
+  ALIEXPRESS
+  CJDROPSHIPPING
+  RESEND
+  OPENAI
+  ANTHROPIC
+}
+
+enum IntegrationStatus {
+  NOT_CONNECTED
+  CONNECTED
+  ERROR
+  REVOKED
+}
+
+// ============================================================
+// Auth — Auth.js v5 required models
+// ============================================================
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String     @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          SystemRole @default(USER)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships Membership[]
+
+  @@map("users")
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// Workspace + membership
+// ============================================================
+
+model Workspace {
+  id        String        @id @default(cuid())
+  name      String
+  slug      String        @unique
+  plan      WorkspacePlan @default(FREE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  memberships          Membership[]
+  products             Product[]
+  watchlistItems       WatchlistItem[]
+  suppliers            Supplier[]
+  brands               Brand[]
+  stores               Store[]
+  automationRules      AutomationRule[]
+  alerts               Alert[]
+  invitations          WorkspaceInvitation[]
+  apiKeys              ApiKey[]
+  integrations         Integration[]
+  auditLogs            AuditLog[]
+  featureFlagOverrides WorkspaceFeatureFlag[]
+
+  @@map("workspaces")
+}
+
+model Membership {
+  id          String        @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@map("memberships")
+}
+
+// ============================================================
+// Product research — Phase 2
+// ============================================================
+
+model Product {
+  id          String          @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  category    ProductCategory @default(OTHER)
+  imageUrl    String?
+
+  costPrice            Float?
+  suggestedRetailPrice Float?
+
+  analysisStatus   AnalysisStatus @default(PENDING)
+  trendScore       Float?
+  demandScore      Float?
+  competitionScore Float?
+  opportunityScore Float?
+  analysisData     Json?
+  analysedAt       DateTime?
+  isDemo           Boolean        @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  watchlistItems WatchlistItem[]
+  suppliers      ProductSupplier[]
+
+  @@index([workspaceId])
+  @@map("products")
+}
+
+model WatchlistItem {
+  id          String   @id @default(cuid())
+  workspaceId String
+  productId   String
+  addedById   String
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, productId])
+  @@map("watchlist_items")
+}
+
+// ============================================================
+// Inventory & suppliers — Phase 3
+// ============================================================
+
+model Supplier {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  country     String?
+  website     String?
+  platform    String?
+  rating      Float?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productLinks ProductSupplier[]
+
+  @@index([workspaceId])
+  @@map("suppliers")
+}
+
+model ProductSupplier {
+  id           String   @id @default(cuid())
+  productId    String
+  supplierId   String
+  price        Float
+  currency     String   @default("USD")
+  moq          Int?
+  leadTimeDays Int?
+  url          String?
+  inStock      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, supplierId])
+  @@map("product_suppliers")
+}
+
+// ============================================================
+// Brand Studio — Phase 4
+// ============================================================
+
+model Brand {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  name           String
+  tagline        String?
+  description    String?
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+  fontDisplay    String?
+  fontBody       String?
+  logoUrl        String?
+  voiceTone      String?
+  targetAudience String?
+  niche          String?
+  status         BrandStatus @default(DRAFT)
+  aiGenerated    Boolean     @default(false)
+  legalNote      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assets    BrandAsset[]
+  stores    Store[]
+
+  @@index([workspaceId])
+  @@map("brands")
+}
+
+model BrandAsset {
+  id        String   @id @default(cuid())
+  brandId   String
+  type      String
+  url       String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@map("brand_assets")
+}
+
+// ============================================================
+// Store Builder — Phase 5
+// ============================================================
+
+model Store {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  brandId       String?
+  name          String
+  platform      StorePlatform @default(MANUAL)
+  status        StoreStatus   @default(PENDING)
+  domain        String?
+  shopifyShopId String?       @unique
+  currency      String        @default("USD")
+  description   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand?    @relation(fields: [brandId], references: [id])
+
+  @@index([workspaceId])
+  @@map("stores")
+}
+
+// ============================================================
+// Automation — Phase 6
+// ============================================================
+
+model AutomationRule {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  trigger     RuleTrigger
+  action      RuleAction
+  config      Json
+  enabled     Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  alerts    Alert[]
+
+  @@index([workspaceId])
+  @@map("automation_rules")
+}
+
+model Alert {
+  id          String        @id @default(cuid())
+  workspaceId String
+  ruleId      String?
+  title       String
+  message     String
+  severity    AlertSeverity @default(INFO)
+  read        Boolean       @default(false)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rule      AutomationRule? @relation(fields: [ruleId], references: [id])
+
+  @@index([workspaceId, read])
+  @@map("alerts")
+}
+
+// ============================================================
+// Team & security — Phase 8 / 10
+// ============================================================
+
+model WorkspaceInvitation {
+  id          String           @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole    @default(MEMBER)
+  token       String           @unique @default(cuid())
+  status      InvitationStatus @default(PENDING)
+  invitedById String
+  expiresAt   DateTime
+  createdAt   DateTime         @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("workspace_invitations")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  keyHash     String    @unique
+  prefix      String
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("api_keys")
+}
+
+// ============================================================
+// Integrations — Phase 9
+// ============================================================
+
+model Integration {
+  id          String              @id @default(cuid())
+  workspaceId String
+  provider    IntegrationProvider
+  status      IntegrationStatus   @default(NOT_CONNECTED)
+  metadata    Json?
+  connectedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+  @@map("integrations")
+}
+
+// ============================================================
+// Audit log — Phase 14
+// ============================================================
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  workspaceId  String?
+  userId       String?
+  action       String
+  resourceType String?
+  resourceId   String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// Feature flags — Phase 12
+// ============================================================
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  enabled     Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspaceOverrides WorkspaceFeatureFlag[]
+
+  @@map("feature_flags")
+}
+
+model WorkspaceFeatureFlag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  flagKey     String
+  enabled     Boolean
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  flag      FeatureFlag? @relation(fields: [flagKey], references: [key])
+
+  @@unique([workspaceId, flagKey])
+  @@map("workspace_feature_flags")
+}
+
+// ============================================================
+// System
+// ============================================================
+
+model SystemMeta {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_meta")
+}
